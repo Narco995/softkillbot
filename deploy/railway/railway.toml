@@ -1,0 +1,26 @@
+[build]
+docker_file = "Dockerfile"
+builder = "dockerfile"
+
+[[services]]
+name = "softkillbot"
+builder = "dockerfile"
+port = 8000
+
+[[services]]
+name = "postgres"
+builder = "dockerfile"
+port = 5432
+
+[[services]]
+name = "redis"
+builder = "dockerfile"
+port = 6379
+
+[environment]
+TELEGRAM_TOKEN = "${{ secrets.TELEGRAM_TOKEN }}"
+SOPHIA_API_TOKEN = "${{ secrets.SOPHIA_API_TOKEN }}"
+SOPHIA_CONTEXT_ID = "telegram-bot"
+DEBUG = "false"
+LOG_LEVEL = "INFO"
+ENVIRONMENT = "production"
