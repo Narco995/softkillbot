@@ -1,0 +1,43 @@
+{
+  "name": "Softkillbot",
+  "description": "AI-Powered Task Management Telegram Bot with Sophia AI Integration",
+  "repository": "https://github.com/Narco995/softkillbot",
+  "keywords": ["telegram", "bot", "ai", "python", "sophia"],
+  "env": {
+    "TELEGRAM_TOKEN": {
+      "description": "Telegram Bot Token",
+      "required": true
+    },
+    "SOPHIA_API_TOKEN": {
+      "description": "Sophia AI API Token",
+      "required": true
+    },
+    "SOPHIA_CONTEXT_ID": {
+      "description": "Sophia Context ID",
+      "value": "telegram-bot"
+    },
+    "DEBUG": {
+      "description": "Debug mode",
+      "value": "False"
+    },
+    "LOG_LEVEL": {
+      "description": "Log level",
+      "value": "INFO"
+    }
+  },
+  "addons": [
+    {
+      "plan": "heroku-postgresql:standard-0",
+      "as": "DATABASE"
+    },
+    {
+      "plan": "heroku-redis:premium-0",
+      "as": "REDIS"
+    }
+  ],
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
+}
