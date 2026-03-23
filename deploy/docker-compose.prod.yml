@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: softkillbot_db_prod
+    environment:
+      POSTGRES_USER: ${DB_USER:-softkill_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-softkill_pass}
+      POSTGRES_DB: softkillbot_prod
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-softkill_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: softkillbot_redis_prod
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: softkillbot_prod
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      DATABASE_URL: postgresql://${DB_USER:-softkill_user}:${DB_PASSWORD:-softkill_pass}@postgres:5432/softkillbot_prod
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      DEBUG: "False"
+      LOG_LEVEL: INFO
+      ENVIRONMENT: production
+      SOPHIA_API_TOKEN: ${SOPHIA_API_TOKEN}
+      SOPHIA_CONTEXT_ID: ${SOPHIA_CONTEXT_ID}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: always
+    networks:
+      - softkillbot
+
+  celery_worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    container_name: softkillbot_worker_prod
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      DATABASE_URL: postgresql://${DB_USER:-softkill_user}:${DB_PASSWORD:-softkill_pass}@postgres:5432/softkillbot_prod
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      DEBUG: "False"
+      LOG_LEVEL: INFO
+      ENVIRONMENT: production
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    restart: always
+    networks:
+      - softkillbot
+
+  nginx:
+    image: nginx:alpine
+    container_name: softkillbot_nginx_prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - bot
+    restart: always
+    networks:
+      - softkillbot
+
+volumes:
+  postgres_data_prod:
+    driver: local
+  redis_data_prod:
+    driver: local
+
+networks:
+  softkillbot:
+    driver: bridge
