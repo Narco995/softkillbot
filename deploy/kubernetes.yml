@@ -1,0 +1,334 @@
+# Kubernetes Deployment for Softkillbot
+# Deploy with: kubectl apply -f deploy/kubernetes.yml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: softkillbot
+
+---
+# PostgreSQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: softkillbot
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: softkillbot-secrets
+              key: db-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: softkillbot-secrets
+              key: db-password
+        - name: POSTGRES_DB
+          value: softkillbot_prod
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi
+
+---
+# PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: softkillbot
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+
+---
+# Redis Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: softkillbot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "300m"
+      volumes:
+      - name: redis-data
+        emptyDir: {}
+
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: softkillbot
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP
+
+---
+# ConfigMap for environment variables
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: softkillbot-config
+  namespace: softkillbot
+data:
+  DEBUG: "False"
+  LOG_LEVEL: "INFO"
+  ENVIRONMENT: "production"
+
+---
+# Secret for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: softkillbot-secrets
+  namespace: softkillbot
+type: Opaque
+stringData:
+  telegram-token: "YOUR_TELEGRAM_TOKEN"
+  db-user: "softkill_user"
+  db-password: "YOUR_DB_PASSWORD"
+  sophia-token: "YOUR_SOPHIA_TOKEN"
+  sophia-context: "telegram-bot"
+
+---
+# Bot Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: softkillbot
+  namespace: softkillbot
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: softkillbot
+  template:
+    metadata:
+      labels:
+        app: softkillbot
+    spec:
+      containers:
+      - name: bot
+        image: narco995/softkillbot:latest
+        imagePullPolicy: Always
+        env:
+        - name: TELEGRAM_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: softkillbot-secrets
+              key: telegram-token
+        - name: DATABASE_URL
+          value: "postgresql://$(DB_USER):$(DB_PASSWORD)@postgres:5432/softkillbot_prod"
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: softkillbot-secrets
+              key: db-user
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: softkillbot-secrets
+              key: db-password
+        - name: REDIS_URL
+          value: "redis://redis:6379/0"
+        - name: CELERY_BROKER_URL
+          value: "redis://redis:6379/1"
+        - name: CELERY_RESULT_BACKEND
+          value: "redis://redis:6379/2"
+        - name: SOPHIA_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: softkillbot-secrets
+              key: sophia-token
+        - name: SOPHIA_CONTEXT_ID
+          valueFrom:
+            secretKeyRef:
+              name: softkillbot-secrets
+              key: sophia-context
+        envFrom:
+        - configMapRef:
+            name: softkillbot-config
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+---
+# Celery Worker StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: softkillbot-worker
+  namespace: softkillbot
+spec:
+  serviceName: softkillbot-worker
+  replicas: 2
+  selector:
+    matchLabels:
+      app: softkillbot-worker
+  template:
+    metadata:
+      labels:
+        app: softkillbot-worker
+    spec:
+      containers:
+      - name: worker
+        image: narco995/softkillbot:latest
+        command: ["celery", "-A", "src.workers.celery_app", "worker", "--loglevel=info"]
+        env:
+        - name: TELEGRAM_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: softkillbot-secrets
+              key: telegram-token
+        - name: DATABASE_URL
+          value: "postgresql://$(DB_USER):$(DB_PASSWORD)@postgres:5432/softkillbot_prod"
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: softkillbot-secrets
+              key: db-user
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: softkillbot-secrets
+              key: db-password
+        - name: CELERY_BROKER_URL
+          value: "redis://redis:6379/1"
+        - name: CELERY_RESULT_BACKEND
+          value: "redis://redis:6379/2"
+        envFrom:
+        - configMapRef:
+            name: softkillbot-config
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+
+---
+# HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: softkillbot-hpa
+  namespace: softkillbot
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: softkillbot
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: softkillbot-service
+  namespace: softkillbot
+spec:
+  type: LoadBalancer
+  selector:
+    app: softkillbot
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
