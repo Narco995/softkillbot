@@ -1,0 +1,162 @@
+# Multi-cloud Docker Compose for local simulation
+# This allows testing multi-cloud deployment locally
+
+version: '3.8'
+
+services:
+  # Primary Cloud (simulated)
+  softkillbot-primary:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      CLOUD: "primary"
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      DATABASE_URL: postgresql://softkill_user:softkill_pass@postgres-primary:5432/softkillbot
+      REDIS_URL: redis://redis-primary:6379/0
+      SOPHIA_API_TOKEN: ${SOPHIA_API_TOKEN}
+    depends_on:
+      - postgres-primary
+      - redis-primary
+    ports:
+      - "8001:8000"
+    networks:
+      - cloud-primary
+    restart: always
+
+  # Secondary Cloud (simulated)
+  softkillbot-secondary:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      CLOUD: "secondary"
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      DATABASE_URL: postgresql://softkill_user:softkill_pass@postgres-secondary:5432/softkillbot
+      REDIS_URL: redis://redis-secondary:6379/0
+      SOPHIA_API_TOKEN: ${SOPHIA_API_TOKEN}
+    depends_on:
+      - postgres-secondary
+      - redis-secondary
+    ports:
+      - "8002:8000"
+    networks:
+      - cloud-secondary
+    restart: always
+
+  # Tertiary Cloud (simulated)
+  softkillbot-tertiary:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      CLOUD: "tertiary"
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      DATABASE_URL: postgresql://softkill_user:softkill_pass@postgres-tertiary:5432/softkillbot
+      REDIS_URL: redis://redis-tertiary:6379/0
+      SOPHIA_API_TOKEN: ${SOPHIA_API_TOKEN}
+    depends_on:
+      - postgres-tertiary
+      - redis-tertiary
+    ports:
+      - "8003:8000"
+    networks:
+      - cloud-tertiary
+    restart: always
+
+  # Primary Cloud Infrastructure
+  postgres-primary:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: softkill_user
+      POSTGRES_PASSWORD: softkill_pass
+      POSTGRES_DB: softkillbot
+    volumes:
+      - postgres_primary:/var/lib/postgresql/data
+    networks:
+      - cloud-primary
+    restart: always
+
+  redis-primary:
+    image: redis:7-alpine
+    volumes:
+      - redis_primary:/data
+    networks:
+      - cloud-primary
+    restart: always
+
+  # Secondary Cloud Infrastructure
+  postgres-secondary:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: softkill_user
+      POSTGRES_PASSWORD: softkill_pass
+      POSTGRES_DB: softkillbot
+    volumes:
+      - postgres_secondary:/var/lib/postgresql/data
+    networks:
+      - cloud-secondary
+    restart: always
+
+  redis-secondary:
+    image: redis:7-alpine
+    volumes:
+      - redis_secondary:/data
+    networks:
+      - cloud-secondary
+    restart: always
+
+  # Tertiary Cloud Infrastructure
+  postgres-tertiary:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: softkill_user
+      POSTGRES_PASSWORD: softkill_pass
+      POSTGRES_DB: softkillbot
+    volumes:
+      - postgres_tertiary:/var/lib/postgresql/data
+    networks:
+      - cloud-tertiary
+    restart: always
+
+  redis-tertiary:
+    image: redis:7-alpine
+    volumes:
+      - redis_tertiary:/data
+    networks:
+      - cloud-tertiary
+    restart: always
+
+  # Load Balancer / API Gateway
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx-multicloud.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - softkillbot-primary
+      - softkillbot-secondary
+      - softkillbot-tertiary
+    networks:
+      - cloud-primary
+      - cloud-secondary
+      - cloud-tertiary
+    restart: always
+
+volumes:
+  postgres_primary:
+  redis_primary:
+  postgres_secondary:
+  redis_secondary:
+  postgres_tertiary:
+  redis_tertiary:
+
+networks:
+  cloud-primary:
+    driver: bridge
+  cloud-secondary:
+    driver: bridge
+  cloud-tertiary:
+    driver: bridge
