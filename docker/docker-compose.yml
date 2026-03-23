@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  softkillbot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: softkillbot
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - RESTHEART_JWT_TOKEN=${RESTHEART_JWT_TOKEN}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./softkillbot.db}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - softkillbot-net
+
+networks:
+  softkillbot-net:
+    driver: bridge
