@@ -1,0 +1,81 @@
+{
+  "family": "softkillbot",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "containerDefinitions": [
+    {
+      "name": "softkillbot",
+      "image": "YOUR_AWS_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/softkillbot:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "DEBUG",
+          "value": "False"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "INFO"
+        },
+        {
+          "name": "ENVIRONMENT",
+          "value": "production"
+        },
+        {
+          "name": "DATABASE_URL",
+          "value": "postgresql://softkill_user:password@softkillbot-db.xxxxxxxxx.us-east-1.rds.amazonaws.com:5432/softkillbot_prod"
+        },
+        {
+          "name": "REDIS_URL",
+          "value": "redis://softkillbot-cache.xxxxxxxxx.ng.0001.use1.cache.amazonaws.com:6379/0"
+        },
+        {
+          "name": "CELERY_BROKER_URL",
+          "value": "redis://softkillbot-cache.xxxxxxxxx.ng.0001.use1.cache.amazonaws.com:6379/1"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "TELEGRAM_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:softkillbot/telegram-token-XXXXX"
+        },
+        {
+          "name": "SOPHIA_API_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:softkillbot/sophia-token-XXXXX"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/softkillbot",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ],
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "tags": [
+    {
+      "key": "Environment",
+      "value": "Production"
+    },
+    {
+      "key": "Application",
+      "value": "Softkillbot"
+    }
+  ]
+}
